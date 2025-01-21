@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="Encoding">
+    <file url="file://$APPLICATION_HOME_DIR$/plugins/python-ce/helpers/typeshed/stdlib/http/cookiejar.pyi" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/.idea/httpRequests/2025-01-17T152312.200.json" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/.idea/httpRequests/2025-01-17T155732-1.404.json" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/main.py" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/test_main.http" charset="UTF-8" />
   </component>
