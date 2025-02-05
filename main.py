@@ -28,7 +28,7 @@ async def cut_img(local_path: str):
             with Image.open(file_path) as img:
                 width, height = img.size
                 # 定义裁剪区域 默认裁剪底部5px
-                crop_area = (0, 0, width, height - 140)
+                crop_area = (0, 0, width, height - 50)
                 # 裁剪图像 覆盖原图
                 img_cropped = img.crop(crop_area)
                 img_cropped.save(file_path)
