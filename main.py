@@ -25,3 +25,8 @@ async def cut_img(local_path: str):
     if result:
         return {"message": f"图片处理成功: {local_path}"}
     return {"message": f"图片处理失败: {local_path}", "status": "error"}
+
+# 添加直接启动入口
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
