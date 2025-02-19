@@ -23,7 +23,7 @@ class ImageTools:
                         
                         # 获取新的文件名
                         current_date = datetime.now().strftime("%Y%m%d")
-                        original_name = os.path.splitext(filename)[0][:2]
+                        original_name = os.path.splitext(filename)[0][:8]
                         file_extension = os.path.splitext(filename)[1]
                         new_height = height - pixels
                         new_filename = f"{current_date}_{original_name}_{new_height}px_{len(processed_files)+1}{file_extension}"
