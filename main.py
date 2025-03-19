@@ -5,6 +5,7 @@ from fastapi import FastAPI
 import os
 from PIL import Image
 from tools.image_tools import ImageTools
+from tools.option_tools import OptionTools
 
 app = FastAPI()
 
@@ -25,6 +26,16 @@ async def cut_img(local_path: str):
     if result:
         return {"message": f"图片处理成功: {local_path}"}
     return {"message": f"图片处理失败: {local_path}", "status": "error"}
+
+
+@app.get("/tools/calculateOptionYield")
+async def calculate_option_yield():
+    option_tools = OptionTools()
+    result = option_tools.calculate_yield()
+    if result:
+        return {"message": "计算收益率成功"}
+    return {"message": "计算收益率失败", "status": "error"}
+
 
 # 添加直接启动入口
 if __name__ == "__main__":
