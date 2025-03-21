@@ -85,3 +85,73 @@ class OptionTools:
         except Exception as e:
             print(f"计算收益率时发生错误: {str(e)}")
             return False
+
+    def calculate_yield2(self):
+        position = 0  # 当前持仓方向：0（空仓），1（多仓），-1（空仓）
+        trade_size = 0  # 初始手数为0（未持仓）
+        pnl = 0  # 累计盈亏
+        entry_price = 0  # 开仓均价
+        prev_signal = 0  # 初始化前一次信号
+
+        for i in range(2, len(df_day)):
+            curr = df_day.iloc[i]
+            prev = df_day.iloc[i - 1]
+
+            current_signal = curr['signal_1']  # 当前信号
+            last_signal = prev['signal_1']  # 昨日信号
+
+            # 条件1：信号一致且未平仓 → 增加手数
+            if current_signal == last_signal and position != 0:
+                # 检查是否触发止损止盈
+                stop_loss = False
+                take_profit = False
+
+                # 多头持仓：检查止损（跌破下限）或止盈（突破上限）
+                if position == 1:
+                    if curr['low'] <= curr['down_lim']:
+                        pnl += (curr['down_lim'] - entry_price) * trade_size
+                        stop_loss = True
+                    elif curr['high'] >= curr['up_lim']:
+                        pnl += (curr['up_lim'] - entry_price) * trade_size
+                        take_profit = True
+
+                # 空头持仓：检查止损（突破上限）或止盈（跌破下限）
+                elif position == -1:
+                    if curr['high'] >= curr['up_lim']:
+                        pnl += (entry_price - curr['up_lim']) * trade_size
+                        stop_loss = True
+                    elif curr['low'] <= curr['down_lim']:
+                        pnl += (entry_price - curr['down_lim']) * trade_size
+                        take_profit = True
+
+                # 未触发止损止盈 → 加仓
+                if not stop_loss and not take_profit:
+                    # 计算新的开仓均价（加权平均）
+                    new_entry_price = (entry_price * trade_size + curr['close']) / (trade_size + 1)
+                    entry_price = new_entry_price
+                    trade_size += 1
+
+                # 触发止损止盈 → 平仓
+                else:
+                    position = 0
+                    trade_size = 0
+
+            # 条件2：信号不一致或首次开仓 → 平仓或开仓
+            else:
+                # 平仓逻辑
+                if position != 0:
+                    # 根据持仓方向计算盈亏
+                    if position == 1:
+                        pnl += (curr['close'] - entry_price) * trade_size
+                    elif position == -1:
+                        pnl += (entry_price - curr['close']) * trade_size
+                    position = 0
+                    trade_size = 0
+
+                # 开仓逻辑（信号一致且非平仓状态）
+                if current_signal == last_signal and current_signal != 0:
+                    position = current_signal
+                    trade_size = 1
+                    entry_price = curr['close']
+
+            prev_signal = current_signal  # 更新前信号

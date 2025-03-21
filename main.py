@@ -22,7 +22,7 @@ async def say_hello(name: str):
 
 @app.get("/tools/cutImg/{local_path:path}")
 async def cut_img(local_path: str):
-    result = ImageTools.cut_bottom(local_path)
+    result = ImageTools.cut_bottom(local_path, 50)
     if result:
         return {"message": f"图片处理成功: {local_path}"}
     return {"message": f"图片处理失败: {local_path}", "status": "error"}
@@ -40,4 +40,5 @@ async def calculate_option_yield():
 # 添加直接启动入口
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
