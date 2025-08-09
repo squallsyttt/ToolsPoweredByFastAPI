@@ -259,6 +259,22 @@ class ImageTools:
                                         print(f"📊 下载进度: {progress:.1f}%", end='\r')
                         
                         print(f"\n✅ 图片 #{index+1} 下载成功！保存到: {file_path}")
+                        try:
+                            print(f"✂️ 正在裁剪图片: {file_path}")
+                            img = Image.open(file_path)
+                            width, height = img.size
+                            pixels_to_cut = 50
+                            if height > pixels_to_cut:
+                                crop_area = (0, 0, width, height - pixels_to_cut)
+                                img_cropped = img.crop(crop_area)
+                                img.close()  # Explicitly close the image file
+                                img_cropped.save(file_path)  # Now save the cropped image
+                                print(f"✅ 图片裁剪成功")
+                            else:
+                                img.close()  # Close the image even if not cropped
+                                print(f"⚠️ 图片高度 ({height}px) 小于裁剪像素 ({pixels_to_cut}px)，跳过裁剪。")
+                        except Exception as crop_error:
+                            print(f"❌ 裁剪图片时发生错误: {str(crop_error)}")
                         success_count += 1
                     else:
                         print(f"❌ 下载失败，HTTP状态码: {response.status_code}")

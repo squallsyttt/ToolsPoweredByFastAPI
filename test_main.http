@@ -27,5 +27,5 @@ GET http://127.0.0.1:8000/tools/calculateOptionYield
 Accept: application/json
 
 ### 根据链接处理笔记数据
-GET http://127.0.0.1:8000/tools/getImgViaUrl?url=https://www.xiaohongshu.com/explore/68901834000000002501f736?xsec_token=ABZlRGiqzFTanlYvabfV9nabVjm65sZ4OnQjlo84CH7AY=&xsec_source=pc_collect
+GET http://127.0.0.1:8000/tools/getImgViaUrl?url=https://www.xiaohongshu.com/explore/688d6a8a00000000250232ad?xsec_token=ABVN7E_Gyhk04Nbwv0c7ZyxTMoOr5Sn1SEVRzIYJnYd00=&xsec_source=pc_collect
 Accept: application/json
