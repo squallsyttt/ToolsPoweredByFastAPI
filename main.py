@@ -28,6 +28,14 @@ async def cut_img(local_path: str):
     return {"message": f"图片处理失败: {local_path}", "status": "error"}
 
 
+@app.get("/tools/getImgViaUrl")
+async def get_img_via_url(url: str):
+    result = ImageTools.get_img_via_url(url)
+    if result:
+        return {"message": f"图片处理成功: {url}"}
+    return {"message": f"图片处理失败: {url}", "status": "error"}
+
+
 @app.get("/tools/calculateOptionYield")
 async def calculate_option_yield():
     option_tools = OptionTools()
