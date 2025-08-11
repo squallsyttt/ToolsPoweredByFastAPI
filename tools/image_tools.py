@@ -9,6 +9,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
+import base64
+import io
 
 
 class ImageTools:
@@ -332,3 +334,72 @@ class ImageTools:
         except Exception as e:
             print(f"处理图片时发生错误: {str(e)}")
             return False
+
+    @staticmethod
+    def get_image_analysis_keywords(image_url: str, api_key: str) -> str:
+        """
+        Analyzes an image from a URL using the SiliconFlow API and returns descriptive keywords.
+
+        :param image_url: The URL of the image to analyze.
+        :param api_key: Your SiliconFlow API key.
+        :return: A string of keywords describing the image, or an error message.
+        """
+        try:
+            print(f"🖼️ Analyzing image from URL: {image_url}")
+
+            # 1. Download the image
+            response = requests.get(image_url)
+            response.raise_for_status()
+            image_data = response.content
+
+            # 2. Encode the image in base64
+            base64_image = base64.b64encode(image_data).decode('utf-8')
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "model": "Qwen/Qwen-VL-Max",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Please analyze this image and provide a list of descriptive keywords, separated by commas."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "max_tokens": 300
+            }
+
+            # 3. Call the SiliconFlow API
+            print("🧠 Calling SiliconFlow API for image analysis...")
+            api_url = "https://api.siliconflow.cn/v1/chat/completions"
+            response = requests.post(api_url, headers=headers, json=payload)
+            response.raise_for_status()
+
+            # 4. Extract the keywords from the response
+            result = response.json()
+            keywords = result['choices'][0]['message']['content']
+            
+            print(f"✅ Analysis successful. Keywords: {keywords}")
+            return keywords
+
+        except requests.exceptions.RequestException as e:
+            error_message = f"❌ Error downloading or processing the image: {e}"
+            print(error_message)
+            return error_message
+        except Exception as e:
+            error_message = f"❌ An unexpected error occurred: {e}"
+            print(error_message)
+            return error_message
