@@ -15,6 +15,208 @@ import io
 
 class ImageTools:
     @staticmethod
+    def _extract_image_from_slide(slide, index):
+        """从slide元素中提取图片URL"""
+        img_selectors = [
+            '.note-slider-img',
+            '.img-container img',
+            'img[src*="sns-webpic"]',
+            'img[data-src*="sns-webpic"]',
+            'img'
+        ]
+
+        for img_sel in img_selectors:
+            try:
+                img_element = slide.find_element(By.CSS_SELECTOR, img_sel)
+                img_url = img_element.get_attribute('src')
+                if not img_url:
+                    img_url = img_element.get_attribute('data-src') or img_element.get_attribute('data-original')
+                if img_url and ('sns-webpic' in img_url or 'xhscdn' in img_url):
+                    print(f"✅ 在slide #{index}中找到图片: {img_sel}")
+                    return img_url
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _get_total_image_count(driver):
+        """获取总图片数的多种尝试"""
+        # 方法1: 分页指示器
+        try:
+            frac_el = driver.find_element(By.CSS_SELECTOR, '.fraction')
+            if frac_el and '/' in frac_el.text:
+                parts = frac_el.text.strip().split('/')
+                if len(parts) == 2 and parts[1].isdigit():
+                    count = int(parts[1])
+                    print(f"📊 分页指示器显示: {count} 张图")
+                    return count
+        except Exception:
+            pass
+
+        # 方法2: 计算slide数量
+        try:
+            slides = driver.find_elements(By.CSS_SELECTOR, '.swiper-slide[data-swiper-slide-index]')
+            if slides:
+                indices = set()
+                for slide in slides:
+                    idx = slide.get_attribute('data-swiper-slide-index')
+                    if idx and idx.isdigit():
+                        indices.add(int(idx))
+                if indices:
+                    count = len(indices)
+                    print(f"📊 slide索引计算: {count} 张图")
+                    return count
+        except Exception:
+            pass
+
+        # 方法3: meta标签中的图片数量
+        try:
+            meta_images = driver.find_elements(By.CSS_SELECTOR, 'meta[property="og:image"]')
+            if meta_images:
+                count = len(meta_images)
+                print(f"📊 meta标签显示: {count} 张图")
+                return count
+        except Exception:
+            pass
+
+        print("📊 无法确定总图片数，使用默认值")
+        return None
+
+    @staticmethod
+    def _trigger_carousel_navigation(driver, img_urls, unique_urls, total_count):
+        """触发轮播导航获取更多图片"""
+        try:
+            # 查找轮播控制按钮
+            next_btn_selectors = [
+                '.arrow-controller.right .btn-wrapper',
+                '.arrow-controller.right',
+                '.swiper-button-next',
+                '[class*="next"]',
+                '[class*="arrow"][class*="right"]'
+            ]
+
+            next_btn = None
+            for selector in next_btn_selectors:
+                try:
+                    btn = driver.find_element(By.CSS_SELECTOR, selector)
+                    if btn.is_displayed() and btn.is_enabled():
+                        next_btn = btn
+                        print(f"✅ 找到轮播按钮: {selector}")
+                        break
+                except Exception:
+                    continue
+
+            if not next_btn:
+                print("⚠️ 未找到可用的轮播按钮")
+                return False
+
+            # 点击轮播按钮收集图片
+            max_clicks = min(total_count * 2 if total_count else 10, 15)
+            initial_count = len(img_urls)
+
+            for step in range(max_clicks):
+                try:
+                    # 尝试点击
+                    driver.execute_script("arguments[0].click();", next_btn)
+                    time.sleep(1.2)  # 增加等待时间
+
+                    # 查找当前活动的图片
+                    active_selectors = [
+                        '.swiper-slide-active img.note-slider-img',
+                        '.swiper-slide-active img',
+                        '.active img',
+                        '.current img'
+                    ]
+
+                    for selector in active_selectors:
+                        try:
+                            active_img = driver.find_element(By.CSS_SELECTOR, selector)
+                            img_url = active_img.get_attribute('src') or active_img.get_attribute('data-src') or active_img.get_attribute('data-original')
+                            if img_url and img_url not in unique_urls and ('sns-webpic' in img_url or 'xhscdn' in img_url):
+                                unique_urls.add(img_url)
+                                img_urls.append(img_url)
+                                print(f"➕ 轮播新增图片 #{len(img_urls)}: {img_url}")
+                                break
+                        except Exception:
+                            continue
+
+                    # 检查是否已收集足够图片
+                    if total_count and len(img_urls) >= total_count:
+                        print("✅ 已收集到预期数量的图片")
+                        break
+
+                    # 检查是否有新图片，如果连续几次没有新图片则停止
+                    if step > 3 and len(img_urls) == initial_count:
+                        print("⚠️ 连续点击未获得新图片，停止轮播")
+                        break
+
+                except Exception as e:
+                    print(f"⚠️ 轮播点击失败: {str(e)}")
+                    break
+
+            new_count = len(img_urls) - initial_count
+            print(f"🎯 轮播补齐获得 {new_count} 张新图片")
+            return new_count > 0
+
+        except Exception as e:
+            print(f"❌ 轮播导航失败: {str(e)}")
+            return False
+
+    @staticmethod
+    def _trigger_scroll_lazy_loading(driver, img_urls, unique_urls):
+        """通过滚动触发懒加载"""
+        try:
+            print("📜 尝试滚动触发懒加载...")
+            initial_count = len(img_urls)
+
+            # 滚动到轮播容器
+            try:
+                carousel = driver.find_element(By.CSS_SELECTOR, '.swiper-container, .swiper, [class*="swiper"]')
+                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", carousel)
+                time.sleep(1)
+            except Exception:
+                pass
+
+            # 模拟鼠标悬停和移动
+            try:
+                from selenium.webdriver.common.action_chains import ActionChains
+                actions = ActionChains(driver)
+
+                # 在轮播区域移动鼠标
+                carousel_area = driver.find_element(By.CSS_SELECTOR, '.swiper-container, .swiper, [class*="swiper"]')
+                actions.move_to_element(carousel_area).perform()
+                time.sleep(0.5)
+
+                # 模拟左右移动
+                actions.move_by_offset(100, 0).perform()
+                time.sleep(0.5)
+                actions.move_by_offset(-200, 0).perform()
+                time.sleep(0.5)
+                actions.move_by_offset(100, 0).perform()
+                time.sleep(1)
+
+            except Exception:
+                pass
+
+            # 检查是否有新图片被加载
+            try:
+                new_images = driver.find_elements(By.CSS_SELECTOR, 'img[src*="sns-webpic"], img[data-src*="sns-webpic"]')
+                for img in new_images:
+                    img_url = img.get_attribute('src') or img.get_attribute('data-src')
+                    if img_url and img_url not in unique_urls:
+                        unique_urls.add(img_url)
+                        img_urls.append(img_url)
+                        print(f"📜 滚动触发新图片: {img_url}")
+            except Exception:
+                pass
+
+            new_count = len(img_urls) - initial_count
+            print(f"📜 滚动触发获得 {new_count} 张新图片")
+
+        except Exception as e:
+            print(f"❌ 滚动触发失败: {str(e)}")
+
+    @staticmethod
     def get_img_via_url(url: str) -> bool:
         try:
             print(f"🚀 开始处理URL: {url}")
@@ -22,18 +224,105 @@ class ImageTools:
             # 设置Chrome选项
             print("⚙️ 正在配置浏览器选项...")
             chrome_options = Options()
+
+            # 基础无头模式配置
             chrome_options.add_argument("--headless")
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36")
+
+            # 性能优化参数
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--disable-software-rasterizer")
+            chrome_options.add_argument("--disable-background-timer-throttling")
+            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+            chrome_options.add_argument("--disable-renderer-backgrounding")
+            chrome_options.add_argument("--disable-features=TranslateUI")
+            chrome_options.add_argument("--disable-ipc-flooding-protection")
+            chrome_options.add_argument("--disable-extensions")
+            chrome_options.add_argument("--disable-default-apps")
+            chrome_options.add_argument("--disable-sync")
+            chrome_options.add_argument("--disable-background-networking")
+            chrome_options.add_argument("--disable-component-update")
+            chrome_options.add_argument("--disable-client-side-phishing-detection")
+            chrome_options.add_argument("--disable-hang-monitor")
+            chrome_options.add_argument("--disable-prompt-on-repost")
+            chrome_options.add_argument("--disable-web-security")
+            chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+
+            # 内存和缓存优化
+            chrome_options.add_argument("--memory-pressure-off")
+            chrome_options.add_argument("--max_old_space_size=4096")
+            chrome_options.add_argument("--aggressive-cache-discard")
+
+            # 网络优化
+            chrome_options.add_argument("--disable-background-downloads")
+            chrome_options.add_argument("--disable-logging")
+            chrome_options.add_argument("--disable-login-animations")
+            chrome_options.add_argument("--disable-notifications")
+
+            # 窗口大小设置
+            chrome_options.add_argument("--window-size=1920,1080")
+
+            # 更新User-Agent到较新版本
+            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+            # 设置页面加载策略
+            chrome_options.page_load_strategy = 'eager'  # 不等待所有资源加载完成
+
+            # 禁用图片加载以提升速度（如果不需要图片预览的话）
+            # chrome_options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
 
             # 初始化WebDriver
             print("🌐 正在启动浏览器...")
-            driver = webdriver.Chrome(options=chrome_options)
+            try:
+                # 设置启动超时时间
+                import signal
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("浏览器启动超时")
+
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)  # 30秒超时
+
+                driver = webdriver.Chrome(options=chrome_options)
+                signal.alarm(0)  # 取消超时
+                print("✅ 浏览器启动成功")
+
+            except TimeoutError:
+                print("❌ 浏览器启动超时（30秒），请检查Chrome和ChromeDriver版本是否匹配")
+                return False
+            except Exception as e:
+                print(f"❌ 浏览器启动失败: {str(e)}")
+                print("💡 建议检查：")
+                print("   1. Chrome浏览器是否已安装")
+                print("   2. ChromeDriver版本是否与Chrome版本匹配")
+                print("   3. ChromeDriver是否在PATH环境变量中")
+                return False
             
             print("📡 正在访问页面...")
-            driver.get(url)
-            
+            try:
+                # 设置页面加载超时
+                driver.set_page_load_timeout(30)
+                start_time = time.time()
+                driver.get(url)
+                load_time = time.time() - start_time
+                print(f"✅ 页面访问成功，耗时: {load_time:.2f}秒")
+
+                # 检查是否被重定向到登录页面
+                current_url = driver.current_url
+                if 'login' in current_url.lower() or 'signin' in current_url.lower():
+                    print(f"⚠️ 页面被重定向到登录页面: {current_url}")
+                    print("💡 建议：")
+                    print("   1. 检查URL中的token是否有效")
+                    print("   2. 尝试在浏览器中手动访问该URL")
+                    print("   3. 可能需要更新token或使用其他访问方式")
+                    driver.quit()
+                    return False
+
+            except Exception as e:
+                print(f"❌ 页面访问失败: {str(e)}")
+                driver.quit()
+                return False
+
             # 使用WebDriverWait智能等待，最长20秒
             print("⏳ 正在等待页面加载完成（最长等待20秒）...")
             wait = WebDriverWait(driver, 20)
@@ -47,34 +336,125 @@ class ImageTools:
 
             # 等待图片元素加载
             print("🔍 正在搜索页面中的图片元素...")
-            
-            # 使用data-swiper-slide-index来准确定位真实的slide，避免duplicate干扰
-            print("🎯 基于data-swiper-slide-index查找真实slide...")
-            
+
+            # 先等待页面基本结构加载完成
             try:
-                # 先找到所有有data-swiper-slide-index的slide
-                slides_with_index = wait.until(EC.presence_of_all_elements_located(
-                    (By.CSS_SELECTOR, '.swiper-slide[data-swiper-slide-index]')
-                ))
-                
-                # 收集并排序去重后的真实索引，避免缓存DOM元素引用
-                index_set = set()
-                for slide in slides_with_index:
-                    idx = slide.get_attribute('data-swiper-slide-index')
-                    if idx is not None and idx.isdigit():
-                        index_set.add(int(idx))
-                sorted_indices = sorted(index_set)
-                
-                print(f"✅ 找到 {len(sorted_indices)} 个真实slide（index范围: {sorted_indices[0] if sorted_indices else 'N/A'}-{sorted_indices[-1] if sorted_indices else 'N/A'}）")
-                
-                if not sorted_indices:
-                    print("❌ 未找到有效的slide元素")
-                    print("📄 正在分析页面内容...")
-                    print(f"页面标题: {driver.title}")
-                    page_source = driver.page_source[:2000]
-                    print(f"页面源代码片段: {page_source}")
-                    driver.quit()
-                    return False
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '.swiper-container, .swiper, [class*="swiper"]')))
+                print("✅ 轮播容器已加载")
+            except Exception:
+                print("⚠️ 未找到轮播容器，尝试查找其他图片结构...")
+
+            # 等待更长时间让页面完全加载和懒加载图片有机会加载
+            print("⏳ 等待页面完全加载...")
+            time.sleep(5)  # 增加等待时间
+
+            # 使用多种策略查找图片
+            print("🎯 使用多重策略查找图片...")
+
+            img_urls = []
+            unique_urls = set()
+
+            # 策略1: 基于data-swiper-slide-index查找
+            try:
+                print("📍 策略1: 基于data-swiper-slide-index查找...")
+                slides_with_index = driver.find_elements(By.CSS_SELECTOR, '.swiper-slide[data-swiper-slide-index]')
+
+                if slides_with_index:
+                    # 收集并排序去重后的真实索引
+                    index_set = set()
+                    for slide in slides_with_index:
+                        idx = slide.get_attribute('data-swiper-slide-index')
+                        if idx is not None and idx.isdigit():
+                            index_set.add(int(idx))
+                    sorted_indices = sorted(index_set)
+
+                    print(f"✅ 找到 {len(sorted_indices)} 个真实slide（index范围: {sorted_indices[0] if sorted_indices else 'N/A'}-{sorted_indices[-1] if sorted_indices else 'N/A'}）")
+
+                    # 从每个slide索引中提取图片URL
+                    for index in sorted_indices:
+                        print(f"🔍 处理slide #{index}...")
+
+                        # 动态定位当前索引的slide
+                        try:
+                            slide = driver.find_element(By.CSS_SELECTOR, f'.swiper-slide[data-swiper-slide-index="{index}"]')
+                        except Exception:
+                            print(f"⚠️ slide #{index} 未能定位，跳过。")
+                            continue
+
+                        # 在当前slide中查找图片
+                        img_url = ImageTools._extract_image_from_slide(slide, index)
+                        if img_url and img_url not in unique_urls:
+                            unique_urls.add(img_url)
+                            img_urls.append(img_url)
+                            print(f"📌 slide #{index}图片URL: {img_url}")
+
+                print(f"📊 策略1收集到 {len(img_urls)} 张图片")
+
+            except Exception as e:
+                print(f"⚠️ 策略1失败: {str(e)}")
+
+            # 策略2: 查找所有可见的图片元素（备用策略）
+            if len(img_urls) == 0:
+                print("📍 策略2: 查找所有可见图片元素...")
+                try:
+                    # 查找多种可能的图片选择器
+                    img_selectors = [
+                        '.note-slider-img',
+                        '.swiper-slide img',
+                        '.img-container img',
+                        '[class*="slider"] img',
+                        '[class*="swiper"] img',
+                        'img[src*="sns-webpic"]',  # 小红书图片CDN
+                        'img[data-src*="sns-webpic"]'
+                    ]
+
+                    for selector in img_selectors:
+                        try:
+                            images = driver.find_elements(By.CSS_SELECTOR, selector)
+                            for img in images:
+                                img_url = img.get_attribute('src') or img.get_attribute('data-src') or img.get_attribute('data-original')
+                                if img_url and img_url not in unique_urls and 'sns-webpic' in img_url:
+                                    unique_urls.add(img_url)
+                                    img_urls.append(img_url)
+                                    print(f"📌 策略2找到图片: {img_url}")
+                        except Exception:
+                            continue
+
+                    print(f"📊 策略2额外收集到 {len(img_urls)} 张图片")
+
+                except Exception as e:
+                    print(f"⚠️ 策略2失败: {str(e)}")
+
+            if not img_urls:
+                print("❌ 所有策略都未找到有效图片")
+                print("📄 正在分析页面内容...")
+                print(f"页面标题: {driver.title}")
+                print(f"当前URL: {driver.current_url}")
+
+                # 检查是否有登录提示或其他阻拦
+                try:
+                    login_elements = driver.find_elements(By.CSS_SELECTOR, '[class*="login"], [class*="Login"], .sign-in, .signin')
+                    if login_elements:
+                        print("⚠️ 检测到登录相关元素，可能需要登录")
+                except Exception:
+                    pass
+
+                # 检查页面中是否有图片相关的元素
+                try:
+                    all_imgs = driver.find_elements(By.TAG_NAME, 'img')
+                    print(f"📊 页面总共有 {len(all_imgs)} 个img元素")
+
+                    # 显示前几个图片的信息
+                    for i, img in enumerate(all_imgs[:5]):
+                        src = img.get_attribute('src') or img.get_attribute('data-src') or 'No src'
+                        print(f"  图片{i+1}: {src[:100]}...")
+                except Exception:
+                    pass
+
+                page_source = driver.page_source[:2000]
+                print(f"页面源代码片段: {page_source}")
+                driver.quit()
+                return False
                 
                 # 从每个slide索引中提取图片URL（每次动态重新定位，避免stale）
                 img_urls = []
@@ -111,88 +491,44 @@ class ImageTools:
                     if img_url:
                         img_urls.append(img_url)
                         print(f"📌 slide #{index}图片URL: {img_url}")
-                    else:
-                        print(f"⚠️ slide #{index}未找到有效图片URL")
-                
-                print(f"🎯 成功收集到 {len(img_urls)} 张图片URL")
-                
-                # 先按顺序去重，并初始化 unique_urls，防止后续补齐逻辑引用未定义变量
-                seen = set()
-                deduped = []
-                for u in img_urls:
-                    if u and u not in seen:
-                        seen.add(u)
-                        deduped.append(u)
-                img_urls = deduped
-                unique_urls = set(img_urls)
-                print(f"🧹 基于slide-index初步去重后剩余 {len(img_urls)} 张图片")
-                
-            except Exception as e:
-                print(f"❌ 基于slide-index查找失败: {str(e)}")
-                print("📄 正在分析页面内容...")
-                print(f"页面标题: {driver.title}")
-                page_source = driver.page_source[:2000]
-                print(f"页面源代码片段: {page_source}")
-                driver.quit()
-                return False
 
-            # 若仍然只有1张，尝试点击轮播右箭头以触发懒加载，补齐图片URL
+
+            # 智能轮播补齐流程
+            print("🔄 启动智能轮播补齐流程...")
             try:
-                # 读取分页总数（如 1/2）
-                total_count = None
-                try:
-                    frac_el = driver.find_element(By.CSS_SELECTOR, '.fraction')
-                    if frac_el and '/' in frac_el.text:
-                        parts = frac_el.text.strip().split('/')
-                        if len(parts) == 2 and parts[1].isdigit():
-                            total_count = int(parts[1])
-                            print(f"🧮 分页指示器显示共有 {total_count} 张图")
-                except Exception:
-                    pass
+                # 多种方式获取总图片数
+                total_count = ImageTools._get_total_image_count(driver)
+                print(f"🧮 预估总图片数: {total_count}")
 
-                if total_count is not None and len(img_urls) < total_count:
-                    print("➡️ 启动轮播补齐流程...")
-                    # 找到右箭头
-                    next_btn = None
-                    for sel in ['.arrow-controller.right .btn-wrapper', '.arrow-controller.right']:
-                        try:
-                            next_btn = driver.find_element(By.CSS_SELECTOR, sel)
-                            if next_btn:
-                                print(f"✅ 找到轮播右箭头: {sel}")
-                                break
-                        except Exception:
-                            continue
-                    # 循环点击，采集新URL
-                    if next_btn:
-                        max_steps = min(total_count * 2, 10)
-                        for step in range(max_steps):
-                            try:
-                                driver.execute_script("arguments[0].click();", next_btn)
-                            except Exception:
-                                try:
-                                    next_btn.click()
-                                except Exception:
-                                    print("⚠️ 右箭头点击失败，结束补齐流程")
-                                    break
-                            time.sleep(0.8)
-                            try:
-                                active_img = driver.find_element(By.CSS_SELECTOR, '.swiper-slide-active img.note-slider-img')
-                            except Exception:
-                                try:
-                                    active_img = driver.find_element(By.CSS_SELECTOR, '.swiper-slide-active img')
-                                except Exception:
-                                    active_img = None
-                            if active_img:
-                                cur = active_img.get_attribute('src') or active_img.get_attribute('data-src') or active_img.get_attribute('data-original')
-                                if cur and cur not in unique_urls:
-                                    unique_urls.add(cur)
-                                    img_urls.append(cur)
-                                    print(f"➕ 轮播新增图片URL: {cur}")
-                            if total_count and len(img_urls) >= total_count:
-                                print("✅ 已采集到全部分页图片URL")
-                                break
-            except Exception as car_err:
-                print(f"⚠️ 轮播补齐流程出现问题: {car_err}")
+                # 如果已收集的图片数少于预估总数，启动补齐流程
+                if total_count is None or len(img_urls) < total_count:
+                    print("➡️ 开始轮播补齐...")
+
+                    # 尝试多种轮播触发方式
+                    carousel_triggered = ImageTools._trigger_carousel_navigation(driver, img_urls, unique_urls, total_count)
+
+                    if not carousel_triggered:
+                        print("🔄 尝试滚动触发懒加载...")
+                        ImageTools._trigger_scroll_lazy_loading(driver, img_urls, unique_urls)
+
+                else:
+                    print("✅ 已收集到足够数量的图片，跳过补齐流程")
+
+            except Exception as e:
+                print(f"⚠️ 轮播补齐流程出现问题: {str(e)}")
+
+            # 最终检查：再次扫描页面确保没有遗漏
+            print("🔍 最终扫描确保没有遗漏...")
+            try:
+                final_images = driver.find_elements(By.CSS_SELECTOR, 'img[src*="sns-webpic"], img[data-src*="sns-webpic"]')
+                for img in final_images:
+                    img_url = img.get_attribute('src') or img.get_attribute('data-src')
+                    if img_url and img_url not in unique_urls:
+                        unique_urls.add(img_url)
+                        img_urls.append(img_url)
+                        print(f"🔍 最终扫描发现遗漏图片: {img_url}")
+            except Exception:
+                pass
 
             print(f"📊 去重与补齐后共有 {len(img_urls)} 张图片待下载")
 
