@@ -1,5 +1,6 @@
 # 完善代码 18998
 import os
+import json
 from datetime import datetime
 from PIL import Image
 import requests
@@ -8,12 +9,548 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import undetected_chromedriver as uc
+from playwright.async_api import async_playwright
 import time
 import base64
 import io
 
 
 class ImageTools:
+    
+    @staticmethod  
+    async def playwright_login_bridge() -> dict:
+        """
+        使用Playwright搭桥，让用户手动登录小红书
+        
+        :return: 包含登录状态和Cookie的结果
+        """
+        try:
+            print("🎭 启动Playwright搭桥模式...")
+            
+            async with async_playwright() as p:
+                # 启动可见的浏览器供用户登录
+                browser = await p.chromium.launch(
+                    headless=False,  # 可见模式让用户登录
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-web-security",
+                        "--disable-features=VizDisplayCompositor",
+                    ]
+                )
+                
+                # 创建浏览器上下文
+                context = await browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                )
+                
+                page = await context.new_page()
+                
+                print("🌐 正在打开小红书登录页面...")
+                await page.goto("https://www.xiaohongshu.com/")
+                
+                print("👤 请在打开的浏览器窗口中手动登录小红书...")
+                print("✋ 登录完成后，请在控制台按 Enter 键继续...")
+                
+                # 等待用户手动登录 - 这里需要用异步方式处理用户输入
+                import asyncio
+                import sys
+                
+                # 创建一个简单的异步输入等待
+                print("💡 请在浏览器中登录完成后，等待3分钟或手动停止服务器重新启动")
+                await asyncio.sleep(180)  # 等待3分钟让用户登录
+                
+                # 获取当前的Cookies
+                cookies = await context.cookies()
+                
+                # 保存Cookies到文件
+                cookies_file = "xiaohongshu_cookies.json"
+                with open(cookies_file, 'w', encoding='utf-8') as f:
+                    json.dump(cookies, f, indent=2, ensure_ascii=False)
+                
+                print(f"✅ Cookies已保存到: {cookies_file}")
+                
+                # 验证登录状态
+                await page.goto("https://www.xiaohongshu.com/user/profile/me")
+                await asyncio.sleep(2)
+                
+                # 检查是否成功访问个人页面
+                current_url = page.url
+                is_logged_in = "login" not in current_url.lower()
+                
+                await browser.close()
+                
+                if is_logged_in:
+                    return {
+                        "status": "success",
+                        "message": "登录成功，Cookies已保存",
+                        "cookies_file": cookies_file,
+                        "cookies_count": len(cookies)
+                    }
+                else:
+                    return {
+                        "status": "error", 
+                        "message": "登录验证失败，请重新尝试"
+                    }
+                
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Playwright搭桥过程中发生错误: {str(e)}"
+            }
+    
+    @staticmethod
+    async def get_img_via_playwright(url: str) -> bool:
+        """
+        使用Playwright和已保存的Cookies抓取小红书图片
+        
+        :param url: 小红书链接
+        :return: 是否成功
+        """
+        try:
+            print(f"🎭 使用Playwright抓取小红书图片...")
+            
+            # 检查Cookies文件是否存在
+            cookies_file = "xiaohongshu_cookies.json"
+            if not os.path.exists(cookies_file):
+                print("❌ 未找到登录Cookies，请先调用 playwright_login_bridge 进行登录")
+                return False
+            
+            # 读取保存的Cookies
+            with open(cookies_file, 'r', encoding='utf-8') as f:
+                cookies = json.load(f)
+            
+            print(f"📄 加载了 {len(cookies)} 个Cookies")
+            
+            import asyncio
+            async with async_playwright() as p:
+                # 启动无头浏览器
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox", 
+                        "--disable-dev-shm-usage",
+                        "--disable-web-security",
+                        "--disable-features=VizDisplayCompositor",
+                    ]
+                )
+                
+                # 创建上下文并添加Cookies
+                context = await browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                )
+                
+                # 添加Cookies
+                await context.add_cookies(cookies)
+                
+                page = await context.new_page()
+                
+                print("🌐 正在访问小红书页面...")
+                await page.goto(url)
+                
+                # 等待页面加载
+                await page.wait_for_timeout(3000)
+                
+                # 检查是否被重定向到登录页
+                current_url = page.url
+                if "login" in current_url.lower():
+                    print("⚠️ Cookies可能已过期，被重定向到登录页")
+                    await browser.close()
+                    return False
+                
+                print("✅ 成功访问页面，开始抓取图片...")
+                
+                # 创建输出文件夹
+                current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_dir = os.path.join("resource", f"playwright_{current_time}")
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+                print(f"📁 创建输出文件夹: {output_dir}")
+                
+                # 等待图片加载
+                await page.wait_for_timeout(5000)
+                
+                # 查找图片元素
+                img_selectors = [
+                    '.note-slider-img',
+                    '.swiper-slide img', 
+                    '.img-container img',
+                    'img[src*="sns-webpic"]',
+                    'img[data-src*="sns-webpic"]'
+                ]
+                
+                img_urls = []
+                unique_urls = set()
+                
+                for selector in img_selectors:
+                    try:
+                        elements = await page.query_selector_all(selector)
+                        for element in elements:
+                            img_url = await element.get_attribute('src') or await element.get_attribute('data-src')
+                            if img_url and 'sns-webpic' in img_url and img_url not in unique_urls:
+                                unique_urls.add(img_url)
+                                img_urls.append(img_url)
+                                print(f"📌 找到图片: {img_url}")
+                    except Exception:
+                        continue
+                
+                print(f"📊 共找到 {len(img_urls)} 张图片")
+                
+                if not img_urls:
+                    print("❌ 未找到有效图片")
+                    await browser.close()
+                    return False
+                
+                # 下载图片
+                success_count = 0
+                for index, img_url in enumerate(img_urls):
+                    try:
+                        print(f"📥 下载第 {index+1}/{len(img_urls)} 张图片...")
+                        
+                        # 使用requests下载图片
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                            'Referer': url
+                        }
+                        
+                        response = requests.get(img_url, headers=headers, timeout=30)
+                        response.raise_for_status()
+                        
+                        # 保存为临时文件，然后转换格式
+                        temp_file_path = os.path.join(output_dir, f"temp_image_{index+1}")
+                        
+                        with open(temp_file_path, 'wb') as f:
+                            f.write(response.content)
+                        
+                        # 使用PIL转换为jpg格式
+                        try:
+                            with Image.open(temp_file_path) as img:
+                                # 如果是RGBA模式，转换为RGB（用于jpg格式）
+                                if img.mode in ('RGBA', 'LA', 'P'):
+                                    # 创建白色背景
+                                    background = Image.new('RGB', img.size, (255, 255, 255))
+                                    if img.mode == 'P':
+                                        img = img.convert('RGBA')
+                                    background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                                    img = background
+                                elif img.mode not in ('RGB', 'L'):
+                                    img = img.convert('RGB')
+                                
+                                # 保存为jpg格式
+                                file_path = os.path.join(output_dir, f"image_{index+1}.jpg")
+                                img.save(file_path, 'JPEG', quality=95)
+                                
+                        except Exception as convert_error:
+                            print(f"⚠️ 图片格式转换失败，保存原格式: {convert_error}")
+                            # 如果转换失败，使用原格式
+                            ext = 'jpg'  # 默认扩展名
+                            if '.png' in img_url or 'png' in response.headers.get('content-type', ''):
+                                ext = 'png'
+                            elif '.webp' in img_url or 'webp' in response.headers.get('content-type', ''):
+                                ext = 'webp'
+                            
+                            file_path = os.path.join(output_dir, f"image_{index+1}.{ext}")
+                            import shutil
+                            shutil.move(temp_file_path, file_path)
+                        else:
+                            # 删除临时文件
+                            os.remove(temp_file_path)
+                        
+                        # 裁剪图片去除水印
+                        try:
+                            img = Image.open(file_path)
+                            width, height = img.size
+                            pixels_to_cut = 50
+                            if height > pixels_to_cut:
+                                crop_area = (0, 0, width, height - pixels_to_cut)
+                                img_cropped = img.crop(crop_area)
+                                img.close()
+                                img_cropped.save(file_path)
+                                print(f"✅ 图片下载并裁剪成功: {file_path}")
+                            else:
+                                img.close()
+                                print(f"✅ 图片下载成功: {file_path}")
+                        except Exception as crop_error:
+                            print(f"⚠️ 图片裁剪失败但下载成功: {crop_error}")
+                        
+                        success_count += 1
+                        
+                    except Exception as e:
+                        print(f"❌ 下载图片失败: {str(e)}")
+                
+                await browser.close()
+                
+                # AI识别并重命名文件夹
+                if success_count > 0 and img_urls:
+                    print("\\n🔍 开始AI图片识别...")
+                    try:
+                        config = ImageTools._load_config()
+                        api_key = config.get("siliconflow", {}).get("api_key")
+                        
+                        if api_key:
+                            # 使用第一张图片进行识别
+                            first_image_url = img_urls[0]
+                            keywords = ImageTools.get_image_analysis_keywords(first_image_url, api_key)
+                            
+                            if keywords and not keywords.startswith("❌"):
+                                # 生成暧昧文件夹名
+                                romantic_name = ImageTools.generate_romantic_folder_name(keywords)
+                                
+                                # 重命名文件夹
+                                parent_dir = os.path.dirname(output_dir)
+                                new_output_dir = os.path.join(parent_dir, romantic_name)
+                                
+                                if os.path.exists(output_dir) and not os.path.exists(new_output_dir):
+                                    os.rename(output_dir, new_output_dir)
+                                    print(f"✨ 文件夹已重命名为: {new_output_dir}")
+                                    output_dir = new_output_dir
+                                    
+                                    # 保存AI描述到文本文件
+                                    try:
+                                        # 使用清理后的文件夹名作为文本文件名
+                                        text_filename = f"{romantic_name}.txt"
+                                        text_file_path = os.path.join(output_dir, text_filename)
+                                        
+                                        with open(text_file_path, 'w', encoding='utf-8') as f:
+                                            f.write(f"AI图片分析结果\n")
+                                            f.write(f"=" * 30 + "\n\n")
+                                            f.write(f"标题: {romantic_name}\n\n")
+                                            f.write(f"AI描述:\n{keywords}\n\n")
+                                            f.write(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                                        
+                                        print(f"📄 AI描述已保存到: {text_file_path}")
+                                    except Exception as text_error:
+                                        print(f"⚠️ 保存AI描述文件失败: {text_error}")
+                        
+                    except Exception as e:
+                        print(f"⚠️ AI识别过程出错: {e}")
+                
+                print(f"🎉 任务完成！成功下载 {success_count}/{len(img_urls)} 张图片")
+                print(f"📂 保存位置: {output_dir}")
+                return success_count > 0
+                
+        except Exception as e:
+            print(f"❌ Playwright抓取过程中发生错误: {str(e)}")
+            return False
+    
+    @staticmethod
+    def process_manual_download_folder(download_folder: str) -> dict:
+        """
+        处理手动下载文件夹中的图片（适用于RoxyBrowser手动下载）
+        
+        :param download_folder: 下载文件夹路径
+        :return: 处理结果
+        """
+        try:
+            print(f"🔍 开始处理手动下载文件夹: {download_folder}")
+            
+            if not os.path.exists(download_folder):
+                return {
+                    "status": "error",
+                    "message": f"下载文件夹不存在: {download_folder}"
+                }
+            
+            # 查找图片文件
+            image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+            image_files = []
+            
+            for filename in os.listdir(download_folder):
+                if any(filename.lower().endswith(ext) for ext in image_extensions):
+                    image_files.append(os.path.join(download_folder, filename))
+            
+            if not image_files:
+                return {
+                    "status": "error", 
+                    "message": "下载文件夹中未找到图片文件"
+                }
+            
+            print(f"📁 找到 {len(image_files)} 张图片")
+            
+            # 创建以当前时间命名的处理文件夹
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.join("resource", f"manual_{current_time}")
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            print(f"📁 创建输出文件夹: {output_dir}")
+            
+            processed_files = []
+            success_count = 0
+            
+            # 处理每张图片
+            for i, image_file in enumerate(image_files):
+                try:
+                    print(f"🔄 处理第 {i+1}/{len(image_files)} 张图片: {os.path.basename(image_file)}")
+                    
+                    # 复制并重命名图片
+                    ext = os.path.splitext(image_file)[1].lower()
+                    new_filename = f"image_{i+1}{ext}"
+                    new_file_path = os.path.join(output_dir, new_filename)
+                    
+                    # 复制文件
+                    import shutil
+                    shutil.copy2(image_file, new_file_path)
+                    
+                    # 执行裁剪（去除小红书水印）
+                    try:
+                        print(f"✂️ 正在裁剪图片: {new_file_path}")
+                        img = Image.open(new_file_path)
+                        width, height = img.size
+                        pixels_to_cut = 50
+                        if height > pixels_to_cut:
+                            crop_area = (0, 0, width, height - pixels_to_cut)
+                            img_cropped = img.crop(crop_area)
+                            img.close()
+                            img_cropped.save(new_file_path)
+                            print(f"✅ 图片裁剪成功")
+                        else:
+                            img.close()
+                            print(f"⚠️ 图片高度 ({height}px) 小于裁剪像素 ({pixels_to_cut}px)，跳过裁剪")
+                    except Exception as crop_error:
+                        print(f"❌ 裁剪图片时发生错误: {str(crop_error)}")
+                    
+                    processed_files.append(new_file_path)
+                    success_count += 1
+                    print(f"✅ 图片处理成功: {new_file_path}")
+                    
+                except Exception as e:
+                    print(f"❌ 处理图片失败: {str(e)}")
+            
+            # 如果处理成功且有图片，进行图片识别并重命名文件夹
+            if success_count > 0 and processed_files:
+                print(f"\\n🔍 开始分析第一张图片生成暧昧文件夹名...")
+                try:
+                    # 加载配置获取API密钥
+                    config = ImageTools._load_config()
+                    api_key = config.get("siliconflow", {}).get("api_key")
+                    
+                    if api_key:
+                        # 使用第一张图片进行识别（需要先上传到网络）
+                        first_image_path = processed_files[0]
+                        print(f"📸 使用第一张图片进行分析: {os.path.basename(first_image_path)}")
+                        
+                        # 为了使用API，我们需要将图片转为base64
+                        with open(first_image_path, 'rb') as f:
+                            image_data = f.read()
+                            base64_image = base64.b64encode(image_data).decode('utf-8')
+                            
+                        keywords = ImageTools.analyze_image_with_base64(base64_image, api_key)
+                        
+                        if keywords and not keywords.startswith("❌"):
+                            # 生成暧昧文件夹名
+                            romantic_name = ImageTools.generate_romantic_folder_name(keywords)
+                            
+                            # 构建新的文件夹路径
+                            parent_dir = os.path.dirname(output_dir)
+                            new_output_dir = os.path.join(parent_dir, romantic_name)
+                            
+                            # 重命名文件夹
+                            if os.path.exists(output_dir) and not os.path.exists(new_output_dir):
+                                os.rename(output_dir, new_output_dir)
+                                print(f"✨ 文件夹已重命名为: {new_output_dir}")
+                                output_dir = new_output_dir
+                                
+                                # 保存AI描述到文本文件
+                                try:
+                                    # 使用清理后的文件夹名作为文本文件名
+                                    text_filename = f"{romantic_name}.txt"
+                                    text_file_path = os.path.join(output_dir, text_filename)
+                                    
+                                    with open(text_file_path, 'w', encoding='utf-8') as f:
+                                        f.write(f"AI图片分析结果\n")
+                                        f.write(f"=" * 30 + "\n\n")
+                                        f.write(f"标题: {romantic_name}\n\n")
+                                        f.write(f"AI描述:\n{keywords}\n\n")
+                                        f.write(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                                    
+                                    print(f"📄 AI描述已保存到: {text_file_path}")
+                                except Exception as text_error:
+                                    print(f"⚠️ 保存AI描述文件失败: {text_error}")
+                            else:
+                                print(f"⚠️ 文件夹重命名失败，目标路径可能已存在: {new_output_dir}")
+                        else:
+                            print(f"⚠️ 图片识别失败: {keywords}")
+                    else:
+                        print("⚠️ 未配置API密钥，跳过图片识别和文件夹重命名")
+                        
+                except Exception as e:
+                    print(f"⚠️ 图片识别或文件夹重命名过程中出现错误: {e}")
+            
+            return {
+                "status": "success",
+                "message": f"成功处理 {success_count}/{len(image_files)} 张图片",
+                "processed_count": success_count,
+                "total_count": len(image_files),
+                "output_folder": output_dir,
+                "processed_files": [os.path.basename(f) for f in processed_files]
+            }
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"处理手动下载文件夹时发生错误: {str(e)}"
+            }
+    
+    @staticmethod
+    def analyze_image_with_base64(base64_image: str, api_key: str) -> str:
+        """
+        使用base64编码的图片进行分析
+        
+        :param base64_image: base64编码的图片数据
+        :param api_key: API密钥
+        :return: 分析结果关键词
+        """
+        try:
+            print(f"🧠 使用base64图片数据进行分析...")
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "model": "Qwen/Qwen2.5-VL-32B-Instruct",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "请分析这张图片，用中文给出文章标题描述，要求：1.描述画面主要内容 2.适合用作图集名称 3.带有一点暧昧色彩。"
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "max_tokens": 200
+            }
+
+            api_url = "https://api.siliconflow.cn/v1/chat/completions"
+            response = requests.post(api_url, headers=headers, json=payload)
+            
+            print(f"📊 响应状态码: {response.status_code}")
+            if response.status_code != 200:
+                print(f"❌ 响应内容: {response.text}")
+                
+            response.raise_for_status()
+
+            result = response.json()
+            keywords = result['choices'][0]['message']['content']
+            
+            print(f"✅ 图片分析成功。关键词: {keywords}")
+            return keywords
+
+        except Exception as e:
+            error_message = f"❌ 图片分析失败: {e}"
+            print(error_message)
+            return error_message
     @staticmethod
     def _extract_image_from_slide(slide, index):
         """从slide元素中提取图片URL"""
@@ -219,18 +756,21 @@ class ImageTools:
     @staticmethod
     def get_img_via_url(url: str) -> bool:
         try:
-            print(f"🚀 开始处理URL: {url}")
+            print(f"🚀 开始处理小红书链接...")
             
-            # 设置Chrome选项
-            print("⚙️ 正在配置浏览器选项...")
+            # 设置Chrome选项（无头模式 + 反检测）
+            print("⚙️ 正在配置无头浏览器选项...")
             chrome_options = Options()
 
-            # 基础无头模式配置
+            # 无头模式
             chrome_options.add_argument("--headless")
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
-
-            # 性能优化参数
+            
+            # 基础窗口设置
+            chrome_options.add_argument("--window-size=1920,1080")
+            
+            # 性能优化参数（无头模式）
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-software-rasterizer")
             chrome_options.add_argument("--disable-background-timer-throttling")
@@ -260,32 +800,25 @@ class ImageTools:
             chrome_options.add_argument("--disable-login-animations")
             chrome_options.add_argument("--disable-notifications")
 
-            # 窗口大小设置
-            chrome_options.add_argument("--window-size=1920,1080")
-
-            # 更新User-Agent到较新版本
-            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            # 更新User-Agent到较新版本，更像真实用户
+            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            
+            # 增强反检测措施
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
 
             # 设置页面加载策略
             chrome_options.page_load_strategy = 'eager'  # 不等待所有资源加载完成
 
-            # 禁用图片加载以提升速度（如果不需要图片预览的话）
-            # chrome_options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
-
             # 初始化WebDriver
-            print("🌐 正在启动浏览器...")
+            print("🌐 正在启动无头浏览器...")
             try:
-                # 设置启动超时时间
-                import signal
-                def timeout_handler(signum, frame):
-                    raise TimeoutError("浏览器启动超时")
-
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(30)  # 30秒超时
-
                 driver = webdriver.Chrome(options=chrome_options)
-                signal.alarm(0)  # 取消超时
-                print("✅ 浏览器启动成功")
+                
+                # 执行反检测脚本
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                print("✅ 无头浏览器启动成功，已启用反检测")
 
             except TimeoutError:
                 print("❌ 浏览器启动超时（30秒），请检查Chrome和ChromeDriver版本是否匹配")
@@ -307,14 +840,41 @@ class ImageTools:
                 load_time = time.time() - start_time
                 print(f"✅ 页面访问成功，耗时: {load_time:.2f}秒")
 
+                # 执行人类行为模拟
+                print("🤖 模拟真实用户行为...")
+                
+                # 等待页面稍微加载
+                time.sleep(2)
+                
+                # 模拟鼠标移动和滚动
+                try:
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    actions = ActionChains(driver)
+                    
+                    # 随机鼠标移动
+                    actions.move_by_offset(100, 200).perform()
+                    time.sleep(0.5)
+                    actions.move_by_offset(-50, -100).perform()
+                    time.sleep(0.5)
+                    
+                    # 轻微滚动
+                    driver.execute_script("window.scrollBy(0, 100);")
+                    time.sleep(1)
+                    driver.execute_script("window.scrollBy(0, -50);")
+                    time.sleep(1)
+                    
+                except Exception:
+                    pass
+                
                 # 检查是否被重定向到登录页面
                 current_url = driver.current_url
                 if 'login' in current_url.lower() or 'signin' in current_url.lower():
-                    print(f"⚠️ 页面被重定向到登录页面: {current_url}")
-                    print("💡 建议：")
-                    print("   1. 检查URL中的token是否有效")
-                    print("   2. 尝试在浏览器中手动访问该URL")
-                    print("   3. 可能需要更新token或使用其他访问方式")
+                    print(f"⚠️ 检测到登录页面重定向，token可能已过期")
+                    print(f"📍 当前URL: {current_url}")
+                    print("💡 可能的解决方案:")
+                    print("   1. 获取新的有效链接（重新复制小红书链接）")
+                    print("   2. 尝试在浏览器中手动访问并复制新的链接")
+                    print("   3. 检查小红书是否更新了反爬虫机制")
                     driver.quit()
                     return False
 
@@ -625,6 +1185,62 @@ class ImageTools:
             print(f"\n🎉 任务完成！成功下载 {success_count}/{len(img_urls)} 张图片")
             print(f"📂 所有图片已保存到: {output_dir}")
             
+            # 如果下载成功且有图片，则进行图片识别并重命名文件夹
+            if success_count > 0 and img_urls:
+                print("\n🔍 开始分析第一张图片生成暧昧文件夹名...")
+                try:
+                    # 加载配置获取API密钥
+                    config = ImageTools._load_config()
+                    api_key = config.get("siliconflow", {}).get("api_key")
+                    
+                    if api_key:
+                        # 使用第一张图片的URL进行识别
+                        first_image_url = img_urls[0]
+                        keywords = ImageTools.get_image_analysis_keywords(first_image_url, api_key)
+                        
+                        if keywords and not keywords.startswith("❌"):
+                            # 生成暧昧文件夹名
+                            romantic_name = ImageTools.generate_romantic_folder_name(keywords)
+                            
+                            # 构建新的文件夹路径
+                            parent_dir = os.path.dirname(output_dir)
+                            new_output_dir = os.path.join(parent_dir, romantic_name)
+                            
+                            # 重命名文件夹
+                            if os.path.exists(output_dir) and not os.path.exists(new_output_dir):
+                                os.rename(output_dir, new_output_dir)
+                                print(f"✨ 文件夹已重命名为: {new_output_dir}")
+                                
+                                # 更新返回信息中的路径
+                                output_dir = new_output_dir
+                                
+                                # 保存AI描述到文本文件
+                                try:
+                                    # 使用清理后的文件夹名作为文本文件名
+                                    text_filename = f"{romantic_name}.txt"
+                                    text_file_path = os.path.join(output_dir, text_filename)
+                                    
+                                    with open(text_file_path, 'w', encoding='utf-8') as f:
+                                        f.write(f"AI图片分析结果\n")
+                                        f.write(f"=" * 30 + "\n\n")
+                                        f.write(f"标题: {romantic_name}\n\n")
+                                        f.write(f"AI描述:\n{keywords}\n\n")
+                                        f.write(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                                    
+                                    print(f"📄 AI描述已保存到: {text_file_path}")
+                                except Exception as text_error:
+                                    print(f"⚠️ 保存AI描述文件失败: {text_error}")
+                            else:
+                                print(f"⚠️ 文件夹重命名失败，目标路径可能已存在: {new_output_dir}")
+                        else:
+                            print(f"⚠️ 图片识别失败: {keywords}")
+                    else:
+                        print("⚠️ 未配置API密钥，跳过图片识别和文件夹重命名")
+                        
+                except Exception as e:
+                    print(f"⚠️ 图片识别或文件夹重命名过程中出现错误: {e}")
+            
+            print(f"📂 最终保存路径: {output_dir}")
             return success_count > 0
             
         except Exception as e:
@@ -697,14 +1313,14 @@ class ImageTools:
             }
 
             payload = {
-                "model": "Qwen/Qwen-VL-Max",
+                "model": "Qwen/Qwen2.5-VL-32B-Instruct",
                 "messages": [
                     {
                         "role": "user",
                         "content": [
                             {
                                 "type": "text",
-                                "text": "Please analyze this image and provide a list of descriptive keywords, separated by commas."
+                                "text": "请分析这张图片，用中文给出文章标题描述，要求：1.描述画面主要内容 2.适合用作图集名称 3.带有一点暧昧色彩。"
                             },
                             {
                                 "type": "image_url",
@@ -715,27 +1331,104 @@ class ImageTools:
                         ]
                     }
                 ],
-                "max_tokens": 300
+                "max_tokens": 200
             }
 
             # 3. Call the SiliconFlow API
-            print("🧠 Calling SiliconFlow API for image analysis...")
+            print("🧠 使用GLM-4.1V-9B-Thinking模型分析图片...")
             api_url = "https://api.siliconflow.cn/v1/chat/completions"
             response = requests.post(api_url, headers=headers, json=payload)
+            
+            # 调试响应
+            print(f"📊 响应状态码: {response.status_code}")
+            if response.status_code != 200:
+                print(f"❌ 响应内容: {response.text}")
+                
             response.raise_for_status()
 
             # 4. Extract the keywords from the response
             result = response.json()
             keywords = result['choices'][0]['message']['content']
             
-            print(f"✅ Analysis successful. Keywords: {keywords}")
+            print(f"✅ 图片分析成功。关键词: {keywords}")
             return keywords
 
         except requests.exceptions.RequestException as e:
-            error_message = f"❌ Error downloading or processing the image: {e}"
+            error_message = f"❌ 图片下载或处理失败: {e}"
             print(error_message)
             return error_message
         except Exception as e:
-            error_message = f"❌ An unexpected error occurred: {e}"
+            error_message = f"❌ 发生未知错误: {e}"
             print(error_message)
             return error_message
+
+    @staticmethod
+    def generate_romantic_folder_name(keywords: str) -> str:
+        """
+        根据图片识别的关键词生成一个带有暧昧色彩的文件夹名称
+        
+        :param keywords: 图片识别的关键词
+        :return: 生成的暧昧文件夹名称
+        """
+        try:
+            import re
+            
+            # 尝试从AI返回中提取标题
+            # 查找被引号包围的标题
+            title_patterns = [
+                r'[*"「]([^*"」]{8,})[*"」]',  # 匹配**"标题"**或「标题」
+                r'标题[：:](.{8,}?)(?:\n|\*|$)',  # 匹配"标题："后的内容
+                r'[：:](.{8,30}?)(?:\n|$)',  # 匹配冒号后的内容
+            ]
+            
+            clean_name = None
+            for pattern in title_patterns:
+                match = re.search(pattern, keywords)
+                if match:
+                    clean_name = match.group(1).strip()
+                    break
+            
+            # 如果没有匹配到标题，使用前面的部分
+            if not clean_name:
+                # 截取第一行或前50个字符
+                first_line = keywords.split('\n')[0]
+                clean_name = first_line[:50] if len(first_line) > 50 else first_line
+            
+            # 清理文件名不能包含的特殊字符
+            clean_name = re.sub(r'[<>:"/\\|?*#]', '', clean_name)
+            clean_name = re.sub(r'[*]{2,}', '', clean_name)  # 移除多个星号
+            clean_name = clean_name.strip()
+            
+            # 确保名称不为空且合理长度
+            if not clean_name or len(clean_name) < 3:
+                clean_name = f"AI识别图片_{datetime.now().strftime('%H%M%S')}"
+            elif len(clean_name) > 50:
+                clean_name = clean_name[:50]
+            
+            print(f"🌟 生成文件夹名: {clean_name}")
+            return clean_name
+            
+        except Exception as e:
+            print(f"❌ 生成文件夹名失败: {e}")
+            # 如果生成失败，返回一个默认的浪漫名称
+            return f"神秘的邂逅_{datetime.now().strftime('%H%M%S')}"
+    
+    @staticmethod
+    def _load_config(config_path: str = "config.json") -> dict:
+        """
+        加载配置文件
+        
+        :param config_path: 配置文件路径
+        :return: 配置字典
+        """
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                return config
+            else:
+                print(f"⚠️ 配置文件不存在: {config_path}")
+                return {}
+        except Exception as e:
+            print(f"❌ 配置文件加载失败: {e}")
+            return {}

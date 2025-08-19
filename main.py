@@ -90,6 +90,116 @@ async def test_silicon_flow_api(prompt: str = "你好，请介绍一下你自己
         }
 
 
+@app.get("/tools/analyzeImageAndGenerateName")
+async def analyze_image_and_generate_name(image_url: str):
+    """测试图片识别和暧昧文件夹名生成功能"""
+    try:
+        from tools.image_tools import ImageTools
+        
+        # 加载配置获取API密钥
+        config = ImageTools._load_config()
+        api_key = config.get("siliconflow", {}).get("api_key")
+        
+        if not api_key:
+            return {
+                "message": "API密钥未配置",
+                "status": "error"
+            }
+        
+        # 分析图片
+        keywords = ImageTools.get_image_analysis_keywords(image_url, api_key)
+        
+        if keywords and not keywords.startswith("❌"):
+            # 生成暧昧文件夹名
+            romantic_name = ImageTools.generate_romantic_folder_name(keywords)
+            
+            return {
+                "message": "图片分析成功",
+                "data": {
+                    "image_url": image_url,
+                    "keywords": keywords,
+                    "romantic_folder_name": romantic_name
+                }
+            }
+        else:
+            return {
+                "message": "图片分析失败",
+                "status": "error",
+                "error": keywords
+            }
+            
+    except Exception as e:
+        return {
+            "message": "处理失败",
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@app.get("/tools/processManualDownload")
+async def process_manual_download(download_folder: str):
+    """处理手动下载文件夹中的图片（适用于RoxyBrowser手动下载）"""
+    from tools.image_tools import ImageTools
+    
+    result = ImageTools.process_manual_download_folder(download_folder)
+    
+    if result["status"] == "success":
+        return {
+            "message": result["message"],
+            "data": {
+                "processed_count": result["processed_count"],
+                "total_count": result["total_count"],
+                "output_folder": result["output_folder"],
+                "processed_files": result["processed_files"]
+            }
+        }
+    else:
+        return {
+            "message": result["message"],
+            "status": "error"
+        }
+
+
+@app.get("/tools/playwrightLogin")
+async def playwright_login():
+    """Playwright搭桥 - 让用户手动登录小红书"""
+    from tools.image_tools import ImageTools
+    
+    result = await ImageTools.playwright_login_bridge()
+    
+    if result["status"] == "success":
+        return {
+            "message": result["message"],
+            "data": {
+                "cookies_file": result["cookies_file"],
+                "cookies_count": result["cookies_count"]
+            }
+        }
+    else:
+        return {
+            "message": result["message"],
+            "status": "error"
+        }
+
+
+@app.get("/tools/getImgViaPlaywright")
+async def get_img_via_playwright(url: str):
+    """使用Playwright和已保存的Cookies抓取小红书图片"""
+    from tools.image_tools import ImageTools
+    
+    result = await ImageTools.get_img_via_playwright(url)
+    
+    if result:
+        return {
+            "message": f"图片处理成功: {url}"
+        }
+    else:
+        return {
+            "message": f"图片处理失败: {url}",
+            "status": "error"
+        }
+
+
 # 添加直接启动入口
 if __name__ == "__main__":
     import uvicorn
