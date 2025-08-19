@@ -1,0 +1,17 @@
+{
+  "siliconflow": {
+    "api_key": "YOUR_SILICONFLOW_API_KEY_HERE",
+    "base_url": "https://api.siliconflow.cn/v1/chat/completions",
+    "default_model": "Qwen/Qwen2.5-72B-Instruct",
+    "timeout": 60,
+    "max_tokens": 2000,
+    "temperature": 0.8,
+    "top_p": 0.9
+  },
+  "story": {
+    "target_length": 1200,
+    "keyword_count_min": 3,
+    "keyword_count_max": 5,
+    "output_dir": "resource"
+  }
+}

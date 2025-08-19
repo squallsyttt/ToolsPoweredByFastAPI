@@ -29,3 +29,15 @@ Accept: application/json
 ### 根据链接处理笔记数据
 GET http://127.0.0.1:8000/tools/getImgViaUrl?url=https://www.xiaohongshu.com/explore/689e97b4000000001b023cda?xsec_token=ABkg09tmrquR_EVDrizsYHAhf6cJKlEQDfgmLxl4NoyR4=&xsec_source=pc_collect
 Accept: application/json
+
+###
+
+### 测试硅基流动API对话接口 (API密钥配置在config.json中)
+GET http://127.0.0.1:8000/tools/testSiliconFlowAPI?prompt=你好，请简单介绍一下自己
+Accept: application/json
+
+###
+
+### 生成每日暧昧小故事 (API密钥配置在config.json中)
+GET http://127.0.0.1:8000/tools/generateDailyStory
+Accept: application/json

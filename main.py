@@ -6,6 +6,7 @@ import os
 from PIL import Image
 from tools.image_tools import ImageTools
 from tools.option_tools import OptionTools
+from tools.story_tools import StoryTools
 
 app = FastAPI()
 
@@ -43,6 +44,50 @@ async def calculate_option_yield():
     if result:
         return {"message": "计算收益率成功"}
     return {"message": "计算收益率失败", "status": "error"}
+
+
+@app.get("/tools/generateDailyStory")
+async def generate_daily_story():
+    """生成每日暧昧小故事"""
+    story_tools = StoryTools()
+    result = story_tools.generate_daily_story()
+    
+    if result["status"] == "success":
+        return {
+            "message": "故事生成成功",
+            "data": {
+                "keywords": result["keywords"],
+                "word_count": result["word_count"],
+                "filepath": result["filepath"],
+                "generated_at": result["generated_at"]
+            }
+        }
+    else:
+        return {
+            "message": "故事生成失败", 
+            "status": "error",
+            "error": result.get("error_message", "未知错误")
+        }
+
+
+@app.get("/tools/testSiliconFlowAPI")
+async def test_silicon_flow_api(prompt: str = "你好，请介绍一下你自己"):
+    """测试硅基流动API对话接口"""
+    story_tools = StoryTools()
+    result = story_tools.call_siliconflow_api(prompt)
+    
+    if result and not result.startswith("❌"):
+        return {
+            "message": "API测试成功",
+            "response": result,
+            "character_count": len(result)
+        }
+    else:
+        return {
+            "message": "API测试失败",
+            "status": "error", 
+            "error": result
+        }
 
 
 # 添加直接启动入口
