@@ -102,9 +102,139 @@ class ImageTools:
             }
     
     @staticmethod
+    async def check_playwright_login_status() -> dict:
+        """
+        检查Playwright登录状态是否有效
+        使用轻量级检查，避免不必要的浏览器启动
+        
+        :return: 登录状态检查结果
+        """
+        try:
+            print("🔍 正在检查Playwright登录状态...")
+            
+            # 检查Cookies文件是否存在
+            cookies_file = "xiaohongshu_cookies.json"
+            if not os.path.exists(cookies_file):
+                print("❌ 未找到登录Cookies文件")
+                return {
+                    "status": "invalid",
+                    "message": "未找到登录Cookies文件",
+                    "need_login": True
+                }
+            
+            # 读取并检查Cookies
+            with open(cookies_file, 'r', encoding='utf-8') as f:
+                cookies = json.load(f)
+            
+            if not cookies:
+                print("❌ Cookies文件为空")
+                return {
+                    "status": "invalid", 
+                    "message": "Cookies文件为空",
+                    "need_login": True
+                }
+            
+            print(f"📄 找到 {len(cookies)} 个Cookies")
+            
+            # 检查关键Cookie是否存在（小红书的关键认证cookie）
+            key_cookies = ['web_session', 'websectiga', 'sec_poison_id']
+            has_key_cookies = any(cookie.get('name') in key_cookies for cookie in cookies)
+            
+            if not has_key_cookies:
+                print("⚠️ 缺少关键认证Cookies")
+                return {
+                    "status": "invalid",
+                    "message": "缺少关键认证Cookies",
+                    "need_login": True
+                }
+            
+            # 检查Cookies的过期时间
+            import time
+            current_time = time.time()
+            expired_count = 0
+            
+            for cookie in cookies:
+                if 'expires' in cookie and cookie['expires'] > 0:
+                    if cookie['expires'] < current_time:
+                        expired_count += 1
+            
+            if expired_count > len(cookies) * 0.5:  # 如果超过一半的cookies过期
+                print(f"⚠️ 大部分Cookies已过期 ({expired_count}/{len(cookies)})")
+                return {
+                    "status": "invalid",
+                    "message": "大部分Cookies已过期",
+                    "need_login": True
+                }
+            
+            print(f"✅ Cookies基础检查通过，有效期内cookies: {len(cookies) - expired_count}/{len(cookies)}")
+            
+            # 只有在基础检查通过后，才进行实际的网络验证（轻量级）
+            print("🌐 进行快速网络验证...")
+            
+            async with async_playwright() as p:
+                # 启动无头浏览器进行快速验证
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-web-security",
+                        "--disable-features=VizDisplayCompositor",
+                        "--disable-images",  # 禁用图片加载
+                        "--disable-javascript",  # 禁用JS
+                    ]
+                )
+                
+                context = await browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                )
+                
+                # 添加Cookies
+                await context.add_cookies(cookies)
+                page = await context.new_page()
+                
+                try:
+                    # 直接访问一个简单的API端点进行快速验证
+                    response = await page.goto("https://www.xiaohongshu.com/api/sns/web/v1/user/selfinfo", timeout=5000)
+                    
+                    if response and response.status == 200:
+                        print("✅ API验证通过，登录状态有效")
+                        await browser.close()
+                        return {
+                            "status": "valid",
+                            "message": "登录状态有效",
+                            "need_login": False,
+                            "cookies_count": len(cookies)
+                        }
+                    else:
+                        print(f"⚠️ API验证失败，状态码: {response.status if response else 'None'}")
+                        
+                except Exception as api_error:
+                    print(f"⚠️ API验证异常: {str(api_error)}")
+                
+                await browser.close()
+                
+                # API验证失败，返回需要登录
+                return {
+                    "status": "invalid",
+                    "message": "API验证失败，登录状态可能已过期",
+                    "need_login": True
+                }
+                
+        except Exception as e:
+            print(f"❌ 检查登录状态时发生错误: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"检查登录状态时发生错误: {str(e)}",
+                "need_login": True
+            }
+    
+    @staticmethod
     async def get_img_via_playwright(url: str) -> bool:
         """
         使用Playwright和已保存的Cookies抓取小红书图片
+        自动检查登录状态，如果无效则弹出登录窗口
         
         :param url: 小红书链接
         :return: 是否成功
@@ -112,10 +242,23 @@ class ImageTools:
         try:
             print(f"🎭 使用Playwright抓取小红书图片...")
             
+            # 1. 先检查登录状态
+            login_status = await ImageTools.check_playwright_login_status()
+            print(f"🔍 登录状态检查结果: {login_status['message']}")
+            
+            # 2. 只有在真正需要登录时才触发登录流程
+            if login_status.get('need_login', False):
+                print("⚠️ 检测到需要重新登录，但让我们先尝试直接抓取...")
+                print("💡 如果抓取失败，您可以手动调用 /tools/playwrightLogin 接口重新登录")
+                
+                # 不自动弹窗，而是先尝试使用现有cookies继续
+                # 如果真的失败了，在错误消息中提示用户手动登录
+            
+            # 3. 现在开始正常的抓取流程
             # 检查Cookies文件是否存在
             cookies_file = "xiaohongshu_cookies.json"
             if not os.path.exists(cookies_file):
-                print("❌ 未找到登录Cookies，请先调用 playwright_login_bridge 进行登录")
+                print("❌ 未找到Cookies文件，请先调用 /tools/playwrightLogin 接口进行登录")
                 return False
             
             # 读取保存的Cookies
@@ -157,7 +300,8 @@ class ImageTools:
                 # 检查是否被重定向到登录页
                 current_url = page.url
                 if "login" in current_url.lower():
-                    print("⚠️ Cookies可能已过期，被重定向到登录页")
+                    print("⚠️ Cookies已过期，被重定向到登录页")
+                    print("💡 请调用 GET /tools/playwrightLogin 接口重新登录")
                     await browser.close()
                     return False
                 

@@ -77,7 +77,7 @@ Accept: application/json
 ###
 
 ### ⭐ 使用Playwright抓取小红书图片（需要先登录）
-GET http://127.0.0.1:8000/tools/getImgViaPlaywright?url=https://www.xiaohongshu.com/explore/68a173eb000000001c00739c?xsec_token=ABKDEw8w35F0QJ-Ol8jlz4np6_tKH9bR32fMywRD9fMrQ=&xsec_source=pc_collect
+GET http://127.0.0.1:8000/tools/getImgViaPlaywright?url=https://www.xiaohongshu.com/explore/689e6ded000000001d00d075?xsec_token=ABlFfvt96h9NkAelncob0vUNQs_Z6j_dseoDTHNxkfIfM=&xsec_source=pc_feed
 Accept: application/json
 
 ###

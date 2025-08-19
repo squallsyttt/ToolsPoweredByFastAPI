@@ -196,7 +196,8 @@ async def get_img_via_playwright(url: str):
     else:
         return {
             "message": f"图片处理失败: {url}",
-            "status": "error"
+            "status": "error",
+            "hint": "如果是登录问题，请先调用 GET /tools/playwrightLogin 接口进行登录"
         }
 
 
