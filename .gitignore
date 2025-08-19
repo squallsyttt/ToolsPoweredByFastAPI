@@ -1,2 +1,39 @@
 /data
 /resource
+
+# 配置文件包含敏感信息，不应提交到版本控制
+config.json
+
+# Cookies文件包含登录信息
+xiaohongshu_cookies.json
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# 虚拟环境
+venv/
+.venv/
+env/
+.env
+
+# IDE 配置文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
