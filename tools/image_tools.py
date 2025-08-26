@@ -1,7 +1,7 @@
 # 完善代码 18998
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image
 import requests
 from selenium import webdriver
@@ -14,18 +14,151 @@ from playwright.async_api import async_playwright
 import time
 import base64
 import io
+from typing import Optional, Dict, List
+
+
+class CookieManager:
+    """
+    Cookie管理器，实现带有效期的cookie缓存
+    """
+    _instance = None
+    _cookies_cache = None
+    _cache_time = None
+    _cache_duration = timedelta(minutes=15)  # 15分钟有效期
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    @classmethod
+    def get_cookies(cls, force_refresh: bool = False) -> Optional[List[Dict]]:
+        """
+        获取缓存的cookies，如果过期或不存在则返回None
+        
+        :param force_refresh: 是否强制刷新
+        :return: cookies列表或None
+        """
+        if force_refresh:
+            cls._cookies_cache = None
+            cls._cache_time = None
+            return None
+            
+        # 检查内存缓存
+        if cls._cookies_cache and cls._cache_time:
+            if datetime.now() - cls._cache_time < cls._cache_duration:
+                print(f"✅ 使用内存缓存的Cookies (剩余有效期: {cls._cache_duration - (datetime.now() - cls._cache_time)})")
+                return cls._cookies_cache
+            else:
+                print("⚠️ 内存缓存的Cookies已过期")
+                cls._cookies_cache = None
+                cls._cache_time = None
+        
+        # 尝试从文件加载
+        cookies_file = "xiaohongshu_cookies.json"
+        if os.path.exists(cookies_file):
+            # 检查文件修改时间
+            file_mod_time = datetime.fromtimestamp(os.path.getmtime(cookies_file))
+            if datetime.now() - file_mod_time < cls._cache_duration:
+                try:
+                    with open(cookies_file, 'r', encoding='utf-8') as f:
+                        cookies = json.load(f)
+                    if cookies:
+                        cls._cookies_cache = cookies
+                        cls._cache_time = file_mod_time
+                        print(f"📄 从文件加载Cookies (剩余有效期: {cls._cache_duration - (datetime.now() - file_mod_time)})")
+                        return cookies
+                except Exception as e:
+                    print(f"❌ 读取Cookies文件失败: {e}")
+            else:
+                print(f"⚠️ Cookies文件已过期 (已超过{cls._cache_duration.total_seconds()/60:.0f}分钟)")
+        
+        return None
+    
+    @classmethod
+    def save_cookies(cls, cookies: List[Dict]) -> bool:
+        """
+        保存cookies到缓存和文件
+        
+        :param cookies: cookies列表
+        :return: 是否保存成功
+        """
+        try:
+            # 保存到文件
+            cookies_file = "xiaohongshu_cookies.json"
+            with open(cookies_file, 'w', encoding='utf-8') as f:
+                json.dump(cookies, f, indent=2, ensure_ascii=False)
+            
+            # 更新内存缓存
+            cls._cookies_cache = cookies
+            cls._cache_time = datetime.now()
+            
+            print(f"✅ Cookies已保存 (有效期: {cls._cache_duration.total_seconds()/60:.0f}分钟)")
+            return True
+        except Exception as e:
+            print(f"❌ 保存Cookies失败: {e}")
+            return False
+    
+    @classmethod
+    def is_valid(cls) -> bool:
+        """
+        检查当前cookies是否有效（在有效期内）
+        
+        :return: 是否有效
+        """
+        cookies = cls.get_cookies()
+        return cookies is not None and len(cookies) > 0
+    
+    @classmethod
+    def get_remaining_time(cls) -> Optional[timedelta]:
+        """
+        获取cookies剩余有效时间
+        
+        :return: 剩余时间或None
+        """
+        if cls._cache_time:
+            remaining = cls._cache_duration - (datetime.now() - cls._cache_time)
+            if remaining.total_seconds() > 0:
+                return remaining
+        return None
+    
+    @classmethod
+    def clear_cache(cls):
+        """
+        清除所有缓存
+        """
+        cls._cookies_cache = None
+        cls._cache_time = None
+        print("🗑️ Cookie缓存已清除")
 
 
 class ImageTools:
     
     @staticmethod  
-    async def playwright_login_bridge() -> dict:
+    async def playwright_login_bridge(force_login: bool = False) -> dict:
         """
         使用Playwright搭桥，让用户手动登录小红书
         
+        :param force_login: 是否强制重新登录
         :return: 包含登录状态和Cookie的结果
         """
         try:
+            # 检查是否需要登录
+            if not force_login:
+                cookie_manager = CookieManager()
+                existing_cookies = cookie_manager.get_cookies()
+                if existing_cookies:
+                    remaining_time = cookie_manager.get_remaining_time()
+                    if remaining_time:
+                        minutes_left = remaining_time.total_seconds() / 60
+                        return {
+                            "status": "success",
+                            "message": f"Cookies仍然有效，剩余{minutes_left:.1f}分钟",
+                            "cookies_file": "xiaohongshu_cookies.json",
+                            "cookies_count": len(existing_cookies),
+                            "remaining_minutes": minutes_left
+                        }
+            
             print("🎭 启动Playwright搭桥模式...")
             
             async with async_playwright() as p:
@@ -65,12 +198,10 @@ class ImageTools:
                 # 获取当前的Cookies
                 cookies = await context.cookies()
                 
-                # 保存Cookies到文件
+                # 使用CookieManager保存
+                cookie_manager = CookieManager()
+                cookie_manager.save_cookies(cookies)
                 cookies_file = "xiaohongshu_cookies.json"
-                with open(cookies_file, 'w', encoding='utf-8') as f:
-                    json.dump(cookies, f, indent=2, ensure_ascii=False)
-                
-                print(f"✅ Cookies已保存到: {cookies_file}")
                 
                 # 验证登录状态
                 await page.goto("https://www.xiaohongshu.com/user/profile/me")
@@ -231,47 +362,53 @@ class ImageTools:
             }
     
     @staticmethod
-    async def get_img_via_playwright(url: str) -> bool:
+    async def get_img_via_playwright(url: str, auto_login: bool = True, headless: bool = True) -> bool:
         """
         使用Playwright和已保存的Cookies抓取小红书图片
-        自动检查登录状态，如果无效则弹出登录窗口
+        智能判断：有效Cookie直接爬取，无效自动登录
         
         :param url: 小红书链接
+        :param auto_login: 是否自动重新登录（默认True）
+        :param headless: 是否使用无头模式（默认True，后台静默运行）
         :return: 是否成功
         """
         try:
             print(f"🎭 使用Playwright抓取小红书图片...")
             
-            # 1. 先检查登录状态
-            login_status = await ImageTools.check_playwright_login_status()
-            print(f"🔍 登录状态检查结果: {login_status['message']}")
+            # 使用CookieManager智能管理Cookie
+            cookie_manager = CookieManager()
+            cookies = cookie_manager.get_cookies()
             
-            # 2. 只有在真正需要登录时才触发登录流程
-            if login_status.get('need_login', False):
-                print("⚠️ 检测到需要重新登录，但让我们先尝试直接抓取...")
-                print("💡 如果抓取失败，您可以手动调用 /tools/playwrightLogin 接口重新登录")
-                
-                # 不自动弹窗，而是先尝试使用现有cookies继续
-                # 如果真的失败了，在错误消息中提示用户手动登录
+            # 智能判断是否需要登录
+            if cookies:
+                remaining_time = cookie_manager.get_remaining_time()
+                if remaining_time:
+                    print(f"✅ Cookie有效，剩余{remaining_time.total_seconds()/60:.1f}分钟，直接开始爬取...")
+                else:
+                    cookies = None
             
-            # 3. 现在开始正常的抓取流程
-            # 检查Cookies文件是否存在
-            cookies_file = "xiaohongshu_cookies.json"
-            if not os.path.exists(cookies_file):
-                print("❌ 未找到Cookies文件，请先调用 /tools/playwrightLogin 接口进行登录")
-                return False
-            
-            # 读取保存的Cookies
-            with open(cookies_file, 'r', encoding='utf-8') as f:
-                cookies = json.load(f)
+            if not cookies:
+                if auto_login:
+                    print("⚠️ Cookie已过期或不存在，正在启动登录流程...")
+                    print("🌐 将打开浏览器窗口，请手动登录...")
+                    login_result = await ImageTools.playwright_login_bridge(force_login=True)
+                    if login_result["status"] != "success":
+                        print(f"❌ 登录失败: {login_result['message']}")
+                        return False
+                    cookies = cookie_manager.get_cookies()
+                    print("✅ 登录成功，Cookie已更新，继续爬取...")
+                else:
+                    print("❌ Cookie已过期或不存在，请先调用 /tools/playwrightLogin 接口进行登录")
+                    return False
             
             print(f"📄 加载了 {len(cookies)} 个Cookies")
             
             import asyncio
             async with async_playwright() as p:
-                # 启动无头浏览器
+                # 根据参数决定是否使用无头模式
+                print(f"🖥️ 使用{'无头' if headless else '可见'}浏览器模式")
                 browser = await p.chromium.launch(
-                    headless=True,
+                    headless=headless,  # 根据参数决定
                     args=[
                         "--no-sandbox", 
                         "--disable-dev-shm-usage",
@@ -301,8 +438,22 @@ class ImageTools:
                 current_url = page.url
                 if "login" in current_url.lower():
                     print("⚠️ Cookies已过期，被重定向到登录页")
-                    print("💡 请调用 GET /tools/playwrightLogin 接口重新登录")
                     await browser.close()
+                    
+                    # 如果开启了auto_login，尝试重新登录
+                    if auto_login:
+                        print("🔄 正在自动重新登录...")
+                        login_result = await ImageTools.playwright_login_bridge(force_login=True)
+                        if login_result["status"] == "success":
+                            # 重新获取cookies并重试
+                            cookie_manager = CookieManager()
+                            cookies = cookie_manager.get_cookies()
+                            if cookies:
+                                print("✅ 重新登录成功，继续抓取...")
+                                # 递归调用自己，但关闭auto_login避免无限循环
+                                return await ImageTools.get_img_via_playwright(url, auto_login=False)
+                    
+                    print("💡 请调用 GET /tools/playwrightLogin 接口重新登录")
                     return False
                 
                 print("✅ 成功访问页面，开始抓取图片...")

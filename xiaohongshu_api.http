@@ -1,0 +1,266 @@
+################################################################################
+# 小红书 API 测试文档
+# 完整使用流程指南
+################################################################################
+
+### ====================================================================
+### 📋 功能概览
+### ====================================================================
+# 本文档包含小红书图片抓取的完整API接口和使用流程
+# 
+# 主要功能：
+# 1. Cookie管理（15分钟有效期自动管理）
+# 2. 自动登录和重试机制
+# 3. 图片下载、裁剪去水印
+# 4. AI图片识别和暧昧文件夹命名
+# 5. 批量处理和手动辅助模式
+#
+# 接口列表：
+# - /tools/                    ⭐ [主接口] 自动处理登录和Cookie管理
+# - /tools/cookieStatus        检查Cookie状态和剩余有效期
+# - /tools/playwrightLogin     手动登录/刷新Cookie
+# - /tools/getImgViaPlaywright 使用已有Cookie抓取（旧接口）
+# - /tools/getImgViaUrl        无头浏览器抓取（基础功能）
+# - /tools/processManualDownload 处理手动下载的图片
+
+### ====================================================================
+### 🚀 最简单的使用方法（一个接口搞定）
+### ====================================================================
+
+### 🎯 直接调用智能批量接口 - 自动判断并批量处理一切！
+# 工作流程：
+# 1. 自动检查Cookie是否有效
+# 2. 有效 → 直接批量爬取（后台静默运行）
+# 3. 无效 → 弹出浏览器让你登录 → 自动保存Cookie → 继续批量爬取
+# 
+# 单个URL：
+GET http://127.0.0.1:8000/tools/getImgViaPlaywright?urls=https://www.xiaohongshu.com/explore/68a289b1000000001c034a5f
+Accept: application/json
+
+### 批量处理（推荐）- 多个URL用逗号分隔：
+GET http://127.0.0.1:8000/tools/getImgViaPlaywright?urls=https://www.xiaohongshu.com/explore/68a289b1000000001c034a5f,https://www.xiaohongshu.com/explore/6724e85a000000001b0138c8
+Accept: application/json
+
+###
+
+### ====================================================================
+### 📋 其他可选功能
+### ====================================================================
+
+### 检查Cookie状态（想知道Cookie还能用多久）
+GET http://127.0.0.1:8000/tools/cookieStatus
+Accept: application/json
+
+### 强制重新登录（如果遇到问题）
+GET http://127.0.0.1:8000/tools/playwrightLogin?force=true
+Accept: application/json
+
+###
+
+### ====================================================================
+### 📝 详细接口文档
+### ====================================================================
+
+### 1️⃣ 主接口 - 自动管理Cookie（推荐使用）
+# 功能：智能处理小红书图片抓取，自动管理登录状态
+# 特点：
+# - Cookie有15分钟有效期
+# - 过期自动触发重新登录
+# - 无需手动管理Cookie
+# 返回值：
+# - status: "success" 或 "error"
+# - message: 处理结果信息
+# - cookie_status: "valid"（使用缓存）或 "refreshed"（重新登录）
+GET http://127.0.0.1:8000/tools/?url=https://www.xiaohongshu.com/explore/68a289b1000000001c034a5f
+Accept: application/json
+
+###
+
+### 2️⃣ Cookie状态检查
+# 功能：查看当前Cookie缓存状态
+# 返回值：
+# - status: "valid" 或 "expired"
+# - remaining_minutes: 剩余有效时间（分钟）
+# - expires_at: 过期时间（ISO格式）
+# - cookies_count: Cookie数量
+GET http://127.0.0.1:8000/tools/cookieStatus
+Accept: application/json
+
+###
+
+### 3️⃣ 手动登录接口
+# 功能：手动触发登录流程
+# 参数：
+# - force=false（默认）: 如果Cookie有效则不重新登录
+# - force=true: 强制重新登录，刷新Cookie
+# 
+# 使用场景：
+# - Cookie即将过期时主动刷新
+# - 登录状态异常时强制重置
+GET http://127.0.0.1:8000/tools/playwrightLogin?force=false
+Accept: application/json
+
+### 强制重新登录（忽略现有Cookie）
+GET http://127.0.0.1:8000/tools/playwrightLogin?force=true
+Accept: application/json
+
+###
+
+### 4️⃣ 【推荐】智能批量Playwright接口 ⭐⭐⭐
+# 功能：批量处理多个小红书链接，一个接口搞定一切
+# - ✅ 支持单个或多个URL（用逗号分隔）
+# - ✅ 自动判断Cookie状态
+# - ✅ Cookie有效：直接爬取（后台静默运行）
+# - ✅ Cookie无效：自动弹窗登录，然后批量爬取
+# - ✅ 15分钟内所有请求复用同一Cookie
+# - ✅ 不需要手动管理任何状态
+# 
+# 单个URL处理：
+GET http://127.0.0.1:8000/tools/getImgViaPlaywright?urls=https://www.xiaohongshu.com/explore/6724e85a000000001b0138c8
+Accept: application/json
+
+### 批量处理多个URL（推荐）⭐：
+GET http://127.0.0.1:8000/tools/getImgViaPlaywright?urls=https://www.xiaohongshu.com/explore/68a5ca83000000001c012b77?xsec_token=ABegdJyBEFmr-eY3IEcHZvjPGDTIU90kpGxzEdkOpyf70=&xsec_source=pc_collect,https://www.xiaohongshu.com/explore/68a2829e000000001c0364d2?xsec_token=ABxNSeYSNZNQpUAA_vPMJc4Zgv7qvBhoyXZkAyZzVqcd4=&xsec_source=pc_collect,https://www.xiaohongshu.com/explore/689f090c000000001d00e4b0?xsec_token=ABb3S-7qceS1gOkHS-jWsGPohEbKtb3QjnLmcNzS-sUXM=&xsec_source=pc_collect,https://www.xiaohongshu.com/explore/686a38af000000001d00ca93?xsec_token=ABjDrh5u2xo5WjXdY-pBFSf2aciPmCGPFknG4rR4NH6eQ=&xsec_source=pc_search&source=web_profile_page
+Accept: application/json
+
+### 可见浏览器批量处理（调试用）：
+GET http://127.0.0.1:8000/tools/getImgViaPlaywright?urls=https://www.xiaohongshu.com/explore/6724e85a000000001b0138c8,https://www.xiaohongshu.com/explore/68a9d11e000000001d0151a3&headless=false
+Accept: application/json
+
+###
+
+### 5️⃣ 无头浏览器抓取（基础功能）❌ 不推荐
+# 功能：使用Selenium无头浏览器抓取
+# 限制：
+# - ❌ 不使用登录的Cookie
+# - ❌ 容易被反爬虫机制拦截
+# - ❌ 成功率低
+# 建议：请使用 /tools/ 或 /tools/getImgViaPlaywright 接口替代
+GET http://127.0.0.1:8000/tools/getImgViaUrl?url=https://www.xiaohongshu.com/explore/68a671be000000001d026a8c
+Accept: application/json
+
+###
+
+### 6️⃣ 处理手动下载的图片
+# 功能：处理通过浏览器手动下载的图片文件夹
+# 使用场景：自动化失败时的备用方案
+# 流程：
+# 1. 手动在浏览器中保存图片到指定文件夹
+# 2. 调用此接口批量处理（裁剪、AI识别、重命名）
+GET http://127.0.0.1:8000/tools/processManualDownload?download_folder=/Users/griffith/Downloads/xiaohongshu
+Accept: application/json
+
+###
+
+### ====================================================================
+### 💡 使用技巧和注意事项
+### ====================================================================
+
+# 1. Cookie管理机制：
+#    - Cookie自动缓存15分钟
+#    - 同时保存在内存和文件（xiaohongshu_cookies.json）
+#    - 过期后自动清理，需要重新登录
+#
+# 2. 登录流程说明：
+#    - 首次使用或Cookie过期时会弹出浏览器窗口
+#    - 手动完成登录后，等待3分钟或按提示操作
+#    - 登录成功后Cookie自动保存
+#
+# 3. 最佳实践：
+#    - 使用 /tools/ 主接口，自动处理所有细节
+#    - 批量处理时在15分钟内完成，避免重复登录
+#    - 定期检查Cookie状态，提前刷新避免中断
+#
+# 4. 错误处理：
+#    - "Not Found"错误：检查URL格式是否正确
+#    - 登录失败：清理Cookie文件后重试
+#    - 图片下载失败：检查网络和账号状态
+#
+# 5. 性能优化：
+#    - 15分钟内的请求会复用Cookie，速度更快
+#    - 批量处理建议使用同一个Cookie周期
+#    - 避免频繁强制刷新Cookie
+
+### ====================================================================
+### 🔧 故障排查
+### ====================================================================
+
+### 测试1: 清理所有Cookie重新开始
+# 如果遇到问题，可以删除Cookie文件重新登录
+# rm xiaohongshu_cookies.json
+# 然后调用登录接口
+GET http://127.0.0.1:8000/tools/playwrightLogin?force=true
+Accept: application/json
+
+###
+
+### 测试2: 验证Cookie是否正常工作
+# 先检查状态，再尝试抓取一个简单的链接
+GET http://127.0.0.1:8000/tools/cookieStatus
+Accept: application/json
+
+###
+
+### 测试3: 使用不同的小红书链接格式
+# 支持多种链接格式，系统会自动处理
+GET http://127.0.0.1:8000/tools/?url=https://www.xiaohongshu.com/explore/68a289b1000000001c034a5f
+Accept: application/json
+
+###
+
+### ====================================================================
+### 📊 响应示例
+### ====================================================================
+
+# 成功响应示例：
+# {
+#   "status": "success",
+#   "message": "图片处理成功: https://...",
+#   "cookie_status": "valid"
+# }
+
+# Cookie状态响应示例：
+# {
+#   "status": "valid",
+#   "message": "Cookies有效，剩余14.5分钟",
+#   "data": {
+#     "cookies_count": 12,
+#     "remaining_minutes": 14.5,
+#     "expires_at": "2024-12-25T10:30:00"
+#   }
+# }
+
+# 错误响应示例：
+# {
+#   "status": "error",
+#   "message": "图片处理失败: https://...",
+#   "hint": "请检查URL是否正确或稍后重试"
+# }
+
+### ====================================================================
+### 🎯 推荐工作流程
+### ====================================================================
+
+# 批量处理流程：
+# 1. 调用 /tools/cookieStatus 检查状态
+# 2. 如果过期，调用 /tools/playwrightLogin 登录
+# 3. 批量调用 /tools/?url=xxx 处理多个链接
+# 4. 所有请求在15分钟内完成
+
+# 单个处理流程（最简单）：
+# 1. 直接调用 /tools/?url=xxx
+# 2. 系统自动处理一切
+
+### ====================================================================
+### 📝 版本历史
+### ====================================================================
+# v2.0 - 2024-12-25
+# - 新增Cookie缓存管理机制（15分钟有效期）
+# - 新增 /tools/ 主接口，自动处理登录
+# - 新增 /tools/cookieStatus 状态检查接口
+# - 优化登录重试逻辑
+#
+# v1.0 - 2024-12-20
+# - 基础Playwright登录功能
+# - 图片下载和处理功能
+# - AI识别和文件夹重命名

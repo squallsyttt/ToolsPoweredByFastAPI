@@ -1,33 +1,15 @@
-# Test your FastAPI endpoints
+################################################################################
+# FastAPI 通用接口测试文档
+################################################################################
 
+### 基础测试 - 检查服务是否运行
 GET http://127.0.0.1:8000/
 Accept: application/json
 
 ###
 
-GET http://127.0.0.1:8000/hello/User
-Accept: application/json
-
-###
-
-GET http://127.0.0.1:8000/tools/cutImg/z123
-Accept: application/json
-
-###
-
-GET http://127.0.0.1:8000/tools/cutImg/z123
-Accept: application/json
-
-### 裁剪指定路径下所有图片 去除小红书水印
-GET http://127.0.0.1:8000/tools/cutImg//Users/griffith/Downloads/cut/
-Accept: application/json
-
 ### 请求计算收益率
 GET http://127.0.0.1:8000/tools/calculateOptionYield
-Accept: application/json
-
-### 根据链接处理笔记数据
-GET http://127.0.0.1:8000/tools/getImgViaUrl?url=https://www.xiaohongshu.com/explore/689e6e5b000000001d00d10a?xsec_token=ABkg09tmrquR_EVDrizsYHAljMtARH1l9-3hS7ofw9a2c=&xsec_source=pc_collect
 Accept: application/json
 
 ###
@@ -44,60 +26,7 @@ Accept: application/json
 
 ###
 
-### 测试图片识别和暧昧文件夹名生成功能
-GET http://127.0.0.1:8000/tools/analyzeImageAndGenerateName?image_url=https://picsum.photos/400/300
-Accept: application/json
-
-###
-
-### 小红书图片抓取 + 暧昧文件夹命名 (完整流程)
-GET http://127.0.0.1:8000/tools/getImgViaUrl?url=YOUR_XIAOHONGSHU_URL_HERE
-Accept: application/json
-
-###
-
-### 处理手动下载的图片文件夹（适用于RoxyBrowser手动下载）
-GET http://127.0.0.1:8000/tools/processManualDownload?download_folder=/Users/griffith/Downloads
-Accept: application/json
-
-###
-
-### RoxyBrowser 手动辅助流程说明
-# 1. 在 RoxyBrowser 中打开小红书链接
-# 2. 手动保存图片到下载文件夹
-# 3. 使用上面的 processManualDownload 接口处理下载的图片
-# 示例：GET http://127.0.0.1:8000/tools/processManualDownload?download_folder=/path/to/your/downloads
-
-###
-
-### ⭐ Playwright搭桥登录（推荐方案）
-GET http://127.0.0.1:8000/tools/playwrightLogin
-Accept: application/json
-
-###
-
-### ⭐ 使用Playwright抓取小红书图片（需要先登录）
-GET http://127.0.0.1:8000/tools/getImgViaPlaywright?url=https://www.xiaohongshu.com/explore/689e6ded000000001d00d075?xsec_token=ABlFfvt96h9NkAelncob0vUNQs_Z6j_dseoDTHNxkfIfM=&xsec_source=pc_feed
-Accept: application/json
-
-###
-
-### 📚 Playwright方案使用说明
-# 🎯 这是最推荐的解决方案！完美解决小红书反爬虫问题
-# 
-# 第一步：调用 /tools/playwrightLogin
-# - 会弹出可见的浏览器窗口
-# - 手动在窗口中登录小红书账号
-# - 登录完成后按 Enter 键
-# - 系统会自动保存登录状态到 xiaohongshu_cookies.json
-#
-# 第二步：调用 /tools/getImgViaPlaywright?url=小红书链接
-# - 使用保存的登录状态自动抓取图片
-# - 支持完整的图片处理流程：下载、裁剪、AI识别、暧昧命名
-# - 完全绕过反爬虫机制
-#
-# 优势：
-# ✅ 100%绕过反爬虫 - 真实用户登录
-# ✅ 自动化程度高 - 只需登录一次
-# ✅ Cookie持久化 - 长期有效
-# ✅ 完整功能支持 - AI识别+暧昧命名
+################################################################################
+# 小红书相关接口已移至 xiaohongshu_api.http
+# 请查看该文件获取完整的小红书API使用指南
+################################################################################
